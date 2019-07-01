@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-WANING_RATE = 0.022
+WANING_RATE = 0.05
 N_SEASONS = 22
 
 # 1997-2015 flu surveillance data
@@ -87,19 +87,26 @@ pct_ili = df_ili['% WEIGHTED ILI']
 plt.plot(range(len(df_ili)), pct_ili)
 plt.show()
 ## average/aggregate graph for % positive flu tests
-mean_pct_pos = []
-for week in range(52):
-    mean_pct_pos.append(np.mean(df.loc[df['WEEK IN SEASON'] == week + 1, \
-        'PCT POSITIVE']))
+def avg_foi_dist(df, var):
+    '''
+    gives average/aggregate distribution for force of infection based on
+    variable var
+    inputs:
+        df: dataframe
+        var: variable representing force of infection
+    '''
+    mean_foi = []
+    for week in range(52):
+        mean_foi.append(np.mean(df.loc[df['WEEK IN SEASON'] == week + 1, \
+            var]))
+    return mean_foi
+mean_pct_pos = avg_foi_dist(df, 'PCT POSITIVE')
 plt.plot(range(52), mean_pct_pos)
 plt.show()
 print("peak of flu season for aggregate data: {} weeks after start of season" \
     .format(mean_pct_pos.index(max(mean_pct_pos)) + 1))
 ## average/aggregate graph for ili
-mean_pct_ili = []
-for week in range(52):
-    mean_pct_ili.append(np.mean(df_ili.loc[df_ili['WEEK IN SEASON'] == \
-        week + 1, '% WEIGHTED ILI']))
+mean_pct_ili = avg_foi_dist(df_ili, '% WEIGHTED ILI')
 plt.plot(range(52), mean_pct_ili)
 plt.show()
 print("peak of ili visits: {} weeks after start of season" \
@@ -195,35 +202,108 @@ def season_foi(df, season, var):
 #     foi = flu_foi(days_tot)
 #     pct_flu_red.append(sum(imm*foi))
 
-def flu_red_dist(foi=None, df=None, var=None):
+def red_dist_foi(foi):
     '''
     graphs distribution for percentage of flu reduction
     inputs: 
         foi: force of infection distribution
     '''
-    if foi and not df: 
+    weeks_tot = np.arange(0, len(foi))
+    pct_flu_red = []
+    for week in weeks_tot:
+        imm = immunity(weeks_tot, week)
+        pct_flu_red.append(sum(imm*foi))
+    return np.arange(1, len(foi) + 1), pct_flu_red
+    # return plt.plot(np.arange(1, len(foi) + 1), pct_flu_red)
+
+def red_dist_df(df, var):
+    '''
+    graphs distribution for percentage of flu reduction
+    inputs:
+        df: dataframe
+        var (str): foi variable of interest in df
+    '''
+    for season in range(N_SEASONS):
+        foi = season_foi(df, season, var)
         weeks_tot = np.arange(0, len(foi))
-        pct_flu_red = []
         for week in weeks_tot:
             imm = immunity(weeks_tot, week)
-            pct_flu_red.append(sum(imm*foi))
-        plt.plot(weeks_tot, pct_flu_red)
-        plt.show()
-    elif not foi and not df.empty:
-        for season in range(N_SEASONS):
-            foi = season_foi(df, season, var)
-            weeks_tot = np.arange(0, len(foi))
-            for week in weeks_tot:
-                imm = immunity(weeks_tot, week)
-                # print(imm)
-                # print(foi)
-                df.loc[(df['WEEK IN SEASON'] == week + 1) & (df['SEASON'] \
-                    == season + 1), 'PCT FLU REDUCTION'] = sum(imm*foi)
-        new_df = df.set_index('WEEK IN SEASON')
-        new_df.groupby('SEASON')['PCT FLU REDUCTION'].plot(legend=True)
-        plt.show()
+            # print(imm)
+            # print(foi)
+            df.loc[(df['WEEK IN SEASON'] == week + 1) & (df['SEASON'] \
+                == season + 1), 'FLU REDUCTION'] = sum(imm*foi)*100
+    new_df = df.set_index('WEEK IN SEASON')
+    return new_df.groupby('SEASON')['FLU REDUCTION']
+    # return new_df.groupby('SEASON')['FLU REDUCTION'].plot(alpha=0.4, \
+        # legend=True)
 
-flu_red_dist(foi=mean_pct_pos)
-flu_red_dist(foi=mean_pct_ili)
-flu_red_dist(df=df, var='PCT POSITIVE')
-flu_red_dist(df=df_ili, var='% WEIGHTED ILI')
+def get_distributions(df, var):
+    '''
+    finds distributions for force of infection and immunity
+    inputs:
+        df: dataframe
+        var: variable representing force of infection
+    '''
+    foi_distributions = []
+    for season in range(N_SEASONS):
+        foi = season_foi(df, season, var)
+        weeks_tot = np.arange(0, len(foi))
+        foi_distributions.append(foi)
+    weeks_tot = np.arange(0, 52)
+    imm_distributions = []
+    for week in weeks_tot:
+        imm_distributions.append(immunity(weeks_tot, week))
+    return foi_distributions, imm_distributions
+
+# three-panel plots
+def plot_all(df, var):
+    '''
+    plots vaccine effectiveness, force of infection, and flu reduction 
+    on one plot
+    inputs:
+        df: dataframe
+        var: variable representing force of infection
+    '''
+    avg_foi = avg_foi_dist(df, var)
+    fig = plt.figure()
+    fig, (ax1, ax2, ax3) = plt.subplots(3)
+    foi_distributions, imm_distributions = get_distributions(df, var)
+    # for dist in imm_distributions:
+        # ax1.plot(np.arange(1, 53), dist)
+    ax1.plot(np.arange(1, 53), imm_distributions[0], color='black')
+    ax1.set_ylabel('Vaccine Effectiveness')
+    for dist in foi_distributions:
+        ax2.plot(np.arange(1, len(dist) + 1), dist, color='gray', linewidth=0.3)
+    ax2.plot(np.arange(1, 53), avg_foi, color='black')
+    ax2.set_ylabel('Force of Infection')
+    grouped = red_dist_df(df, var)
+    for g in grouped:
+        ax3.plot(g[1], color='gray', linewidth=0.3)
+    x3, y3 = red_dist_foi(avg_foi)
+    ax3.plot(x3, y3, color='black')
+    ax3.set_ylabel('Flu Reduction')
+    ax3.set_xlabel('Week in Flu Season')
+    # following code to set font size inspired by ryggyr on Stack Overflow
+    # https://stackoverflow.com/questions/3899980/how-to-change-the-font-size-on-a-matplotlib-plot
+    for item in ([ax1.yaxis.label, ax2.yaxis.label, ax3.yaxis.label, \
+        ax3.xaxis.label]):
+        item.set_fontsize(8)
+    plt.show()
+plot_all(df, 'PCT POSITIVE')
+plot_all(df_ili, '% WEIGHTED ILI')
+
+# individual plots
+x_mean_flu, y_mean_flu = red_dist_foi(foi=mean_pct_pos)
+plt.plot(x_mean_flu, y_mean_flu)
+plt.show()
+
+red_dist_df(df=df, var='PCT POSITIVE').plot(legend=True)
+plt.show()
+
+x_mean_ili, y_mean_ili = red_dist_foi(foi=mean_pct_ili)
+plt.plot(x_mean_ili, y_mean_ili)
+plt.show()
+
+red_dist_df(df=df_ili, var='% WEIGHTED ILI').plot(legend=True)
+plt.show()
+
