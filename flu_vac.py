@@ -5,6 +5,7 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import calendar
 
 WANING_RATE = 0.05
 N_SEASONS = 22
@@ -53,10 +54,12 @@ df = pd.concat([df9715, df1519]).reset_index()
 def seasons(df):
     '''
     adds columns in df for the flu season (numbered 1-22) and week in season
+    beginning with 1
+    input:
+        df: dataframe
     '''
-    n_seasons = int(np.ceil(len(df)/52))
     season_lb, season_ub = 0, 53
-    for n in range(n_seasons):
+    for n in range(N_SEASONS):
         df.loc[season_lb:season_ub, 'SEASON'] = n + 1
         if n == 0: # seasons/years with 53 weeks
             season_lb += 53
@@ -86,31 +89,26 @@ plt.plot(range(len(df)), pct_pos)
 pct_ili = df_ili['% WEIGHTED ILI']
 plt.plot(range(len(df_ili)), pct_ili)
 plt.show()
-## average/aggregate graph for % positive flu tests
 def avg_foi_dist(df, var):
     '''
     gives average/aggregate distribution for force of infection based on
     variable var
     inputs:
         df: dataframe
-        var: variable representing force of infection
+        var: variable in df representing force of infection
     '''
     mean_foi = []
     for week in range(52):
         mean_foi.append(np.mean(df.loc[df['WEEK IN SEASON'] == week + 1, \
             var]))
     return mean_foi
+## average/aggregate graphs for % positive flu tests and % ili visits
 mean_pct_pos = avg_foi_dist(df, 'PCT POSITIVE')
 plt.plot(range(52), mean_pct_pos)
 plt.show()
-print("peak of flu season for aggregate data: {} weeks after start of season" \
-    .format(mean_pct_pos.index(max(mean_pct_pos)) + 1))
-## average/aggregate graph for ili
 mean_pct_ili = avg_foi_dist(df_ili, '% WEIGHTED ILI')
 plt.plot(range(52), mean_pct_ili)
 plt.show()
-print("peak of ili visits: {} weeks after start of season" \
-    .format(mean_pct_ili.index(max(mean_pct_ili)) + 1))
 ## stats for peak of flu season and peak ili
 def get_stats(df, var):
     '''
@@ -131,36 +129,28 @@ def get_stats(df, var):
 get_stats(df, 'PCT POSITIVE')
 get_stats(df_ili, '% WEIGHTED ILI')
 ## graph % positive by influenza season beginning week 40
-## season 1 starts in 1997; season 22 ends in 2019
+# season 1 starts in 1997; season 22 ends in 2019
 df_new = df.set_index('WEEK IN SEASON')
 df_new.groupby('SEASON')['PCT POSITIVE'].plot(legend=True)
 plt.show()
-## graph ili by year 
+## graph % ili visits by influenza season 
 df_ili_new = df_ili.set_index('WEEK IN SEASON')
 df_ili_new.groupby('SEASON')['% WEIGHTED ILI'].plot(legend=True)
 plt.show()
 
-# def immunity(t, t_vac=0):
-#     '''
-#     gives distribution for immunity of flu vaccine 
-#     inputs:
-#         t (array of integers): represents days
-#         t_vac (int): day of flu vaccination
-#     '''
-#     dist = np.exp(-WANING_RATE*t)
-#     unvac_days = np.array([0]*t_vac)
-#     dist = np.concatenate([unvac_days, dist])
-#     dist = dist[0:len(t)]
-#     return dist
-
-def immunity(t, t_vac=0):
+def immunity(t, t_vac, waning_rate):
     '''
-    gives distribution for immunity of flu vaccine 
+    gives simulated distribution for immunity to flu after vaccination
     inputs:
         t (array of integers): represents weeks
         t_vac (int): day of flu vaccination
     '''
-    dist = np.exp(-WANING_RATE*t)
+    t = t.astype(float)
+    # piecewise function needs to be fixed
+    # right now hard-coded for waning rate of 0.05
+    dist = np.piecewise(t, [t < 2, t >= 2], [lambda t: np.exp(0.346575*t - 1), \
+       lambda t: np.exp(-waning_rate*t) + 0.0952])
+    # dist = np.exp(-waning_rate*t)
     unvac_weeks = np.array([0]*t_vac)
     dist = np.concatenate([unvac_weeks, dist])
     dist = dist[0:len(t)]
@@ -168,9 +158,9 @@ def immunity(t, t_vac=0):
 
 def flu_foi(t):
     '''
-    gives distribution for force of infection of flu
+    gives simulated distribution for a flu force of infection curve
     input:
-        t (array of integers): represents days
+        t (array of integers): represents days/weeks
     '''
     a = 1/2
     k = 1/30
@@ -182,8 +172,8 @@ def season_foi(df, season, var):
     '''
     inputs:
         df: dataframe
-        var (str): variable name for foi
-        season: flu season of interest
+        var (str): variable in df representing force of infection
+        season (int): flu season of interest
     returns foi distribution
     '''
     foi_dist = []
@@ -194,55 +184,45 @@ def season_foi(df, season, var):
             (df['SEASON'] == season), var].item())
     return foi_dist
 
-# days_tot = np.arange(0, 180)
-# pct_flu_red = []
-# for day in days_tot:
-#     t_vac = day
-#     imm = immunity(days_tot, t_vac)
-#     foi = flu_foi(days_tot)
-#     pct_flu_red.append(sum(imm*foi))
-
-def red_dist_foi(foi):
+def red_dist_foi(foi, waning_rate):
     '''
-    graphs distribution for percentage of flu reduction
+    returns x and y to graph distribution for flu reduction
     inputs: 
         foi: force of infection distribution
     '''
     weeks_tot = np.arange(0, len(foi))
     pct_flu_red = []
     for week in weeks_tot:
-        imm = immunity(weeks_tot, week)
+        imm = immunity(weeks_tot, week, waning_rate)
         pct_flu_red.append(sum(imm*foi))
     return np.arange(1, len(foi) + 1), pct_flu_red
     # return plt.plot(np.arange(1, len(foi) + 1), pct_flu_red)
 
-def red_dist_df(df, var):
+def red_dist_df(df, var, waning_rate):
     '''
-    graphs distribution for percentage of flu reduction
+    returns groupby object to graph time series for flu reduction
     inputs:
         df: dataframe
-        var (str): foi variable of interest in df
+        var (str): variable in df representing force of infection
     '''
     for season in range(N_SEASONS):
         foi = season_foi(df, season, var)
         weeks_tot = np.arange(0, len(foi))
         for week in weeks_tot:
-            imm = immunity(weeks_tot, week)
-            # print(imm)
-            # print(foi)
+            imm = immunity(weeks_tot, week, waning_rate)
             df.loc[(df['WEEK IN SEASON'] == week + 1) & (df['SEASON'] \
-                == season + 1), 'FLU REDUCTION'] = sum(imm*foi)*100
+                == season + 1), 'FLU REDUCTION'] = sum(imm*foi)
     new_df = df.set_index('WEEK IN SEASON')
     return new_df.groupby('SEASON')['FLU REDUCTION']
     # return new_df.groupby('SEASON')['FLU REDUCTION'].plot(alpha=0.4, \
         # legend=True)
 
-def get_distributions(df, var):
+def get_distributions(df, var, waning_rate):
     '''
     finds distributions for force of infection and immunity
     inputs:
         df: dataframe
-        var: variable representing force of infection
+        var (str): variable in df representing force of infection
     '''
     foi_distributions = []
     for season in range(N_SEASONS):
@@ -252,22 +232,24 @@ def get_distributions(df, var):
     weeks_tot = np.arange(0, 52)
     imm_distributions = []
     for week in weeks_tot:
-        imm_distributions.append(immunity(weeks_tot, week))
+        imm_distributions.append(immunity(weeks_tot, week, waning_rate))
     return foi_distributions, imm_distributions
 
 # three-panel plots
-def plot_all(df, var):
+def plot_all(df, var, waning_rate):
     '''
     plots vaccine effectiveness, force of infection, and flu reduction 
     on one plot
     inputs:
         df: dataframe
-        var: variable representing force of infection
+        var (str): variable in df representing force of infection
     '''
     avg_foi = avg_foi_dist(df, var)
     fig = plt.figure()
-    fig, (ax1, ax2, ax3) = plt.subplots(3)
-    foi_distributions, imm_distributions = get_distributions(df, var)
+    ax1 = fig.add_subplot(311)
+    ax2 = fig.add_subplot(312)
+    ax3 = fig.add_subplot(313)
+    foi_distributions, imm_distributions = get_distributions(df, var, waning_rate)
     # for dist in imm_distributions:
         # ax1.plot(np.arange(1, 53), dist)
     ax1.plot(np.arange(1, 53), imm_distributions[0], color='black')
@@ -276,34 +258,64 @@ def plot_all(df, var):
         ax2.plot(np.arange(1, len(dist) + 1), dist, color='gray', linewidth=0.3)
     ax2.plot(np.arange(1, 53), avg_foi, color='black')
     ax2.set_ylabel('Force of Infection')
-    grouped = red_dist_df(df, var)
+    grouped = red_dist_df(df, var, waning_rate)
     for g in grouped:
         ax3.plot(g[1], color='gray', linewidth=0.3)
-    x3, y3 = red_dist_foi(avg_foi)
+    x3, y3 = red_dist_foi(avg_foi, waning_rate)
     ax3.plot(x3, y3, color='black')
     ax3.set_ylabel('Flu Reduction')
-    ax3.set_xlabel('Week in Flu Season')
+    ax3.set_xlabel('Time')
+    ax3.set_xticks(np.arange(1, 48.67, step=4.33))
+    labels = calendar.month_abbr[10:13] + calendar.month_abbr[1:10]
+    ax3.set_xticklabels(labels, rotation=90, fontsize=8)
+    for ax in ([ax1, ax2]):
+        ax.set_xticks(np.arange(1, 48.67, step=4.33))
+        ax.set_xticklabels([])
     # following code to set font size inspired by ryggyr on Stack Overflow
     # https://stackoverflow.com/questions/3899980/how-to-change-the-font-size-on-a-matplotlib-plot
     for item in ([ax1.yaxis.label, ax2.yaxis.label, ax3.yaxis.label, \
         ax3.xaxis.label]):
         item.set_fontsize(8)
     plt.show()
-plot_all(df, 'PCT POSITIVE')
-plot_all(df_ili, '% WEIGHTED ILI')
+plot_all(df, 'PCT POSITIVE', WANING_RATE)
+plot_all(df_ili, '% WEIGHTED ILI', WANING_RATE)
 
 # individual plots
-x_mean_flu, y_mean_flu = red_dist_foi(foi=mean_pct_pos)
+x_mean_flu, y_mean_flu = red_dist_foi(foi=mean_pct_pos, WANING_RATE)
 plt.plot(x_mean_flu, y_mean_flu)
 plt.show()
 
-red_dist_df(df=df, var='PCT POSITIVE').plot(legend=True)
+red_dist_df(df=df, var='PCT POSITIVE', WANING_RATE).plot(legend=True)
 plt.show()
 
-x_mean_ili, y_mean_ili = red_dist_foi(foi=mean_pct_ili)
+x_mean_ili, y_mean_ili = red_dist_foi(foi=mean_pct_ili, WANING_RATE)
 plt.plot(x_mean_ili, y_mean_ili)
 plt.show()
 
-red_dist_df(df=df_ili, var='% WEIGHTED ILI').plot(legend=True)
+red_dist_df(df=df_ili, var='% WEIGHTED ILI', WANING_RATE).plot(legend=True)
 plt.show()
 
+# plot relationship between waning rate and optimate time to vaccinate
+def waningrate_plot(df, var):
+    '''
+    plots vaccination week of max protection for range of waning rates
+    inputs:
+        df: dataframe
+        var (str): variable in df representing force of infection
+    '''
+    week_max_red = []
+    waning_rates = np.linspace(0, 0.2)
+    for wr in waning_rates:
+        flu_red_dist = red_dist_foi(avg_foi_dist(df, var), wr)[1]
+        week_max_red.append(flu_red_dist.index(max(flu_red_dist)) + 1)
+    plt.plot(week_max_red, waning_rates, color='black')
+    ax = plt.axes()
+    ax.set_xticks(np.arange(1, 14, step=4.33))
+    labels = calendar.month_abbr[10:13] + calendar.month_abbr[1:2]
+    ax.set_xticklabels(labels, rotation=90, fontsize=8)
+    plt.xlabel('Optimal Week to Vaccinate')
+    plt.ylabel('Waning Rate')
+    plt.show()
+
+waningrate_plot(df, 'PCT POSITIVE')
+waningrate_plot(df_ili, '% WEIGHTED ILI')
