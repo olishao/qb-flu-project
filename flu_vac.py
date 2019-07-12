@@ -151,7 +151,6 @@ def immunity(t, t_vac, waning_rate):
     t = t.astype(float)
     dist = np.piecewise(t, [t < 2, t >= 2], [lambda t: np.exp((np.log(2)/2)*t \
         - 1), lambda t: np.exp(-waning_rate*(t - 2))])
-    # dist = np.exp(-waning_rate*t)
     unvac_weeks = np.array([0]*t_vac)
     dist = np.concatenate([unvac_weeks, dist])
     dist = dist[0:len(t)]
@@ -200,7 +199,6 @@ def red_dist_foi(foi, waning_rate):
         imm = immunity(weeks_tot, week, waning_rate)
         pct_flu_red.append(sum(imm*foi))
     return np.arange(0, len(foi)), pct_flu_red
-    # return plt.plot(np.arange(1, len(foi) + 1), pct_flu_red)
 
 def red_dist_df(df, var, waning_rate):
     '''
@@ -219,8 +217,6 @@ def red_dist_df(df, var, waning_rate):
                 == season + 1), 'FLU REDUCTION'] = sum(imm*foi)
     new_df = df.set_index('WEEK IN SEASON')
     return new_df.groupby('SEASON')['FLU REDUCTION']
-    # return new_df.groupby('SEASON')['FLU REDUCTION'].plot(alpha=0.4, \
-        # legend=True)
 
 def get_distributions(df, var, waning_rate):
     '''
