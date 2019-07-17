@@ -7,9 +7,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import calendar
 
-WANING_RATE = 0.05
+WANING_RATE = 0.025
 N_SEASONS = 22
-SEASON_START_WEEK = 29
+SEASON_START_WEEK = 28 # mid-july, with week indices beginning at 0 \
+# (actually 29th week of the year)
 
 # 1997-2015 flu surveillance data
 df9715 = pd.read_csv('WHO_NREVSS_Combined_prior_to_2015_16.csv', header=1)
@@ -91,7 +92,7 @@ plt.plot(range(len(df)), pct_pos)
 pct_ili = df_ili['% WEIGHTED ILI']
 plt.plot(range(len(df_ili)), pct_ili)
 plt.show()
-def avg_foi_dist(df, var):
+def avg_dist(df, var):
     '''
     gives average/aggregate distribution for force of infection based on
     variable var
@@ -99,16 +100,16 @@ def avg_foi_dist(df, var):
         df: dataframe
         var: variable in df representing force of infection
     '''
-    mean_foi = []
+    mean_dist = []
     for week in range(52):
-        mean_foi.append(np.mean(df.loc[df['WEEK IN SEASON'] == week, \
+        mean_dist.append(np.mean(df.loc[df['WEEK IN SEASON'] == week, \
             var]))
-    return mean_foi
+    return mean_dist
 ## average/aggregate graphs for % positive flu tests and % ili visits
-mean_pct_pos = avg_foi_dist(df, 'PCT POSITIVE')
+mean_pct_pos = avg_dist(df, 'PCT POSITIVE')
 plt.plot(range(52), mean_pct_pos)
 plt.show()
-mean_pct_ili = avg_foi_dist(df_ili, '% WEIGHTED ILI')
+mean_pct_ili = avg_dist(df_ili, '% WEIGHTED ILI')
 plt.plot(range(52), mean_pct_ili)
 plt.show()
 ## stats for peak of flu season and peak ili
@@ -124,10 +125,16 @@ def get_stats(df, var):
         var_max = max(df.loc[df['SEASON'] == n + 1, var])
         peak_var.append(var_max)
         peak_week.append(int(df.loc[df[var] == var_max, 'WEEK IN SEASON']))
+    mean_peak_week = np.mean(peak_week)
     print("mean peak {} is {}, with standard deviation {}".format(var, \
         np.mean(peak_var), np.std(peak_var)))
-    print("mean peak week is {}, with standard deviation {}".format( \
-        np.mean(peak_week), np.std(peak_week)))
+    print(mean_peak_week)
+    if mean_peak_week > 52 - (SEASON_START_WEEK + 1):
+        print("mean peak week is {}, with standard deviation {}".format( \
+            SEASON_START_WEEK + 1 + mean_peak_week - 52, np.std(peak_week)))
+    else:
+        print("mean peak week is {}, with standard deviation {}".format( \
+            SEASON_START_WEEK + 1 + mean_peak_week, np.std(peak_week)))
 get_stats(df, 'PCT POSITIVE')
 get_stats(df_ili, '% WEIGHTED ILI')
 ## graph % positive by influenza season beginning week 29
@@ -149,8 +156,8 @@ def immunity(t, t_vac, waning_rate):
         waning_rate (float): waning rate
     '''
     t = t.astype(float)
-    dist = np.piecewise(t, [t < 2, t >= 2], [lambda t: np.exp((np.log(2)/2)*t \
-        - 1), lambda t: np.exp(-waning_rate*(t - 2))])
+    dist = np.piecewise(t, [t < 2, t >= 2], [lambda t: np.exp((np.log(2)/2)*t) \
+        - 1, lambda t: np.exp(-waning_rate*(t - 2))])
     unvac_weeks = np.array([0]*t_vac)
     dist = np.concatenate([unvac_weeks, dist])
     dist = dist[0:len(t)]
@@ -245,7 +252,7 @@ def plot_all(df, var, waning_rate):
         df: dataframe
         var (str): variable in df representing force of infection
     '''
-    avg_foi = avg_foi_dist(df, var)
+    avg_foi = avg_dist(df, var)
     fig = plt.figure()
     ax1 = fig.add_subplot(311)
     ax2 = fig.add_subplot(312)
@@ -254,7 +261,9 @@ def plot_all(df, var, waning_rate):
     # for dist in imm_distributions:
         # ax1.plot(np.arange(0, 52), dist)
     ax1.plot(np.arange(0, 52), imm_distributions[0], color='black')
-    ax1.set_ylabel('Vaccine Effectiveness')
+    ax1.set_ylim(-0.05, 1.1)
+    ax1.set_ylabel('Relative Vaccine \n Effectiveness')
+    ax1.set_xlabel('Time')
     for dist in foi_distributions:
         ax2.plot(np.arange(0, len(dist)), dist, color='gray', linewidth=0.3)
     ax2.plot(np.arange(0, 52), avg_foi, color='black')
@@ -268,8 +277,9 @@ def plot_all(df, var, waning_rate):
     ax3.set_ylabel('Protection')
     ax3.set_xlabel('Time of Vaccination')
     for ax in ([ax1, ax2, ax3]):
-        ax.set_xticks(np.arange(4.33/2, 47.67 + 4.33/2, step=4.33))
-        ax.set_xticks(np.arange(0, 52, step=4.33), minor=True)
+        # 4.345 weeks on average in a month
+        ax.set_xticks(np.arange(4.345/2, 47.8 + 4.345/2, step=4.345))
+        ax.set_xticks(np.arange(0, 53, step=4.345), minor=True)
         ax.set_xticklabels([])
     labels = calendar.month_abbr[7:13] + calendar.month_abbr[1:8]
     ax2.set_xticklabels(labels, fontsize=8, minor=True)
@@ -277,7 +287,7 @@ def plot_all(df, var, waning_rate):
     # following code to set font size inspired by ryggyr on Stack Overflow
     # https://stackoverflow.com/questions/3899980/how-to-change-the-font-size-on-a-matplotlib-plot
     for item in ([ax1.yaxis.label, ax2.yaxis.label, ax3.yaxis.label, \
-        ax2.xaxis.label, ax3.xaxis.label]):
+        ax1.xaxis.label, ax2.xaxis.label, ax3.xaxis.label]):
         item.set_fontsize(8)
     plt.tight_layout()
     plt.show()
@@ -299,6 +309,10 @@ plt.show()
 red_dist_df(df_ili, '% WEIGHTED ILI', WANING_RATE).plot(legend=True)
 plt.show()
 
+# get stats for peak reduction
+get_stats(df, 'FLU REDUCTION')
+get_stats(df_ili, 'FLU REDUCTION')
+
 # plot relationship between waning rate and optimal time to vaccinate
 def waningrate_plot(df, var):
     '''
@@ -310,20 +324,24 @@ def waningrate_plot(df, var):
     week_max_red = []
     waning_rates = np.linspace(0, 0.1)
     for wr in waning_rates:
-        flu_red_dist = red_dist_foi(avg_foi_dist(df, var), wr)[1]
+        flu_red_dist = red_dist_foi(avg_dist(df, var), wr)[1]
         week_max_red.append(flu_red_dist.index(max(flu_red_dist)))
-    print(week_max_red)
-    plt.plot(week_max_red, waning_rates, color='black')
-    plt.xlim([0, 21.67])
-    plt.ylim([0, 0.1])
+    plt.plot(waning_rates, week_max_red, color='black')
+    plt.ylim([0, 21.67])
+    plt.xlim([0, 0.1])
     ax = plt.axes()
-    ax.set_xticks(np.arange(4.33/2, 18 + 4.33/2, step=4.33))
-    ax.set_xticks(np.arange(0, 21.67, step=4.33), minor=True)
-    ax.set_xticklabels([])
+    ax.set_yticks(np.arange(4.345/2, 18 + 4.345/2, step=4.345))
+    ax.set_yticks(np.arange(0, 21.75, step=4.345), minor=True)
+    ax.set_yticklabels([])
     labels = calendar.month_abbr[7:13]
-    ax.set_xticklabels(labels, fontsize=8, minor=True)
-    plt.xlabel('Optimal Week to Vaccinate')
-    plt.ylabel('Weekly Waning Rate')
+    ax.set_yticklabels(labels, rotation=90, fontsize=8, minor=True, va='center')
+    # following code to modify tick labels inspired by Jianxun Li on Stack Overflow
+    # https://stackoverflow.com/questions/31357611/format-y-axis-as-percent
+    ax.set_xticks(np.arange(0, 0.11, step=0.01))
+    vals = ax.get_xticks()
+    ax.set_xticklabels(['{:,.0%}'.format(x) for x in vals], fontsize=8)
+    plt.ylabel('Optimal Week to Vaccinate')
+    plt.xlabel('Weekly Waning Rate')
     plt.show()
 
 waningrate_plot(df, 'PCT POSITIVE')
