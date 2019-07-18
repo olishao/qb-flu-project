@@ -6,6 +6,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import calendar
+from matplotlib.collections import LineCollection
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
 WANING_RATE = 0.025
 N_SEASONS = 22
@@ -251,6 +253,7 @@ def plot_all(df, var, waning_rate):
     inputs:
         df: dataframe
         var (str): variable in df representing force of infection
+        waning_rate (float): waning rate
     '''
     avg_foi = avg_dist(df, var)
     fig = plt.figure()
@@ -309,6 +312,48 @@ plt.show()
 red_dist_df(df_ili, '% WEIGHTED ILI', WANING_RATE).plot(legend=True)
 plt.show()
 
+def plot_flu_red(df, var):
+    '''
+    plots mean flu reduction/protection curve for varying waning rates
+    inputs:
+        df: dataframe
+        var (str): variable in df representing force of infection
+    '''
+    distributions = []
+    waning_rates = np.linspace(0, 0.1, 20)
+    avg_foi = avg_dist(df, var)
+    x = np.arange(0, 52)
+    a = 0.2
+    for wr in waning_rates:
+        dist = red_dist_foi(avg_foi, wr)[1]
+        distributions.append(dist)
+    lines = LineCollection([np.column_stack([x, dist]) for dist in \
+        distributions], cmap='binary')
+    lines.set_array(waning_rates)
+    fig, ax = plt.subplots()
+    ax.set_ylim(0, max(distributions[0]))
+    ax.set_xlim(0, 52)
+    ax.set_ylabel('Protection')
+    ax.set_xlabel('Time of Vaccination')
+    ax.tick_params(axis="y", labelsize=8)
+    ax.set_xticks(np.arange(4.345/2, 47.8 + 4.345/2, step=4.345))
+    ax.set_xticks(np.arange(0, 53, step=4.345), minor=True)
+    ax.set_xticklabels([])
+    labels = calendar.month_abbr[7:13] + calendar.month_abbr[1:8]
+    ax.set_xticklabels(labels, fontsize=8, minor=True)
+    ax.add_collection(lines)
+    # axins = inset_axes(ax, width="5%", height="95%", loc='upper right')
+    # cb = fig.colorbar(lines, cax=axins)
+    cb = fig.colorbar(lines)
+    cb.set_label('Waning Rate')
+    cb.ax.tick_params(labelsize=8) 
+    # axins.yaxis.set_ticks_position("left")
+    # axins.yaxis.set_label_position("left")
+    plt.show()
+
+plot_flu_red(df, 'PCT POSITIVE')
+plot_flu_red(df_ili, '% WEIGHTED ILI')
+
 # get stats for peak reduction
 get_stats(df, 'FLU REDUCTION')
 get_stats(df_ili, 'FLU REDUCTION')
@@ -323,23 +368,21 @@ def waningrate_plot(df, var):
     '''
     week_max_red = []
     waning_rates = np.linspace(0, 0.1)
+    avg_foi = avg_dist(df, var)
     for wr in waning_rates:
-        flu_red_dist = red_dist_foi(avg_dist(df, var), wr)[1]
+        flu_red_dist = red_dist_foi(avg_foi, wr)[1]
         week_max_red.append(flu_red_dist.index(max(flu_red_dist)))
     plt.plot(waning_rates, week_max_red, color='black')
-    plt.ylim([0, 21.67])
+    plt.ylim([0, 21.75])
     plt.xlim([0, 0.1])
     ax = plt.axes()
-    ax.set_yticks(np.arange(4.345/2, 18 + 4.345/2, step=4.345))
+    ax.set_yticks(np.arange(4.345/2, 21.75 + 4.345/2, step=4.345))
     ax.set_yticks(np.arange(0, 21.75, step=4.345), minor=True)
     ax.set_yticklabels([])
     labels = calendar.month_abbr[7:13]
     ax.set_yticklabels(labels, rotation=90, fontsize=8, minor=True, va='center')
-    # following code to modify tick labels inspired by Jianxun Li on Stack Overflow
-    # https://stackoverflow.com/questions/31357611/format-y-axis-as-percent
     ax.set_xticks(np.arange(0, 0.11, step=0.01))
-    vals = ax.get_xticks()
-    ax.set_xticklabels(['{:,.0%}'.format(x) for x in vals], fontsize=8)
+    ax.tick_params(axis="x", labelsize=8)
     plt.ylabel('Optimal Week to Vaccinate')
     plt.xlabel('Weekly Waning Rate')
     plt.show()
