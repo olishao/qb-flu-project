@@ -10,10 +10,11 @@ from matplotlib.collections import LineCollection
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
 plt.rcParams["font.family"] = "Tex Gyre Pagella"
-WANING_RATE = 0.025
+WANING_RATE = 0.025 # weekly waning rate
 N_SEASONS = 22
 SEASON_START_WEEK = 28 # mid-july, with week indices beginning at 0 \
 # (actually the 29th week of the year)
+T_TO_MAX = 2 # weeks it takes to reach max VE, after which waning begins
 
 # 1997-2015 flu surveillance data
 df9715 = pd.read_csv('WHO_NREVSS_Combined_prior_to_2015_16.csv', header=1)
@@ -24,7 +25,7 @@ df1519ph = pd.read_csv('WHO_NREVSS_Public_Health_Labs.csv', header=1)
 # 1997-2015 influenza like illness data
 df_ili = pd.read_csv('ILINet.csv', header=1)
 
-## clean data
+# clean data
 df9715['TOTAL POSITIVE'] = df9715.iloc[:, -7:].sum(axis=1)
 df9715 = df9715.drop(['REGION TYPE', 'REGION', 'A (2009 H1N1)', 'A (H1)', \
     'A (H3)', 'A (Subtyping not Performed)', 'A (Unable to Subtype)', \
@@ -56,19 +57,21 @@ df9715.rename(columns={'TOTAL SPECIMENS':'TOTAL'}, inplace=True)
 df9715['PERCENT POSITIVE'] = df9715['PERCENT POSITIVE']/100
 df9715.rename(columns={'PERCENT POSITIVE':'PCT POSITIVE'}, inplace=True)
 df = pd.concat([df9715, df1519], sort=False).reset_index()
-## define flu seasons in flu and ili dataframes for analysis and graphing purposes
+
 def seasons(df, start_week):
     '''
-    adds columns in df for the flu season (numbered 1-22) and week in season
+    adds columns in df for the flu season (numbered 0-21) and week in season
     beginning with 0 (the start of the season being week 29, mid-july)
     input:
         df: dataframe
+        start_week (int): week of the year defining start of season 
+            (using zero-based indexing)
     '''
-    season_lb, season_ub = 0, 52 - (40 - start_week)
+    season_lb, season_ub = 0, 52 - (40 - start_week) # bounding week indices for first season
     for n in range(N_SEASONS):
-        df.loc[season_lb:season_ub, 'SEASON'] = n + 1
+        df.loc[season_lb:season_ub, 'SEASON'] = n # zero-based indexing for seasons
         if n == 0: # seasons/years with 53 weeks
-            season_lb += 53 - (40 - start_week)
+            season_lb += 53 - (40 - start_week) # compensate for shorter first season
             season_ub += 52 
         elif n == 5 or n == 10 or n == 16:
             season_lb += 52
@@ -81,71 +84,47 @@ def seasons(df, start_week):
             season_ub += 52
     df.loc[df['WEEK'] >= start_week, 'WEEK IN SEASON'] = \
         df.loc[df['WEEK'] >= start_week, 'WEEK'] - start_week
-    df.loc[(df['WEEK'] < start_week) & (df['SEASON'].isin([1, 7, 12, 18])), \
+    df.loc[(df['WEEK'] < start_week) & (df['SEASON'].isin([0, 6, 11, 17])), \
         'WEEK IN SEASON'] = df.loc[df['WEEK'] < start_week, 'WEEK'] + 53 \
         - start_week
-    df.loc[(df['WEEK'] < start_week) & (~df['SEASON'].isin([1, 7, 12, 18])), \
+    df.loc[(df['WEEK'] < start_week) & (~df['SEASON'].isin([0, 6, 11, 17])), \
         'WEEK IN SEASON'] = df.loc[df['WEEK'] < start_week, 'WEEK'] + 52 \
         - start_week
+## define flu seasons in flu and ili dataframes for analysis and graphing purposes
 seasons(df, SEASON_START_WEEK)
 seasons(df_ili, SEASON_START_WEEK)
-## create scaled variables for flu incidence
+
 def scale_inc(df, var):
     '''
+    scales the incidence at each week by the total seasonal incidence
     inputs:
         df: dataframe
-        var (str): force of infection variable to be scaled
+        var (str): incidence variable to be scaled
     '''
     for n in range(N_SEASONS):
-        season_inc = df.loc[df['SEASON'] == n + 1, var]
-        if len(season_inc) < 52:
+        season_inc = df.loc[df['SEASON'] == n, var]
+        if len(season_inc) < 52: # if season is incomplete (e.g. 1997-1998 season)
             pass
         else:
-            df.loc[df['SEASON'] == n + 1, ('SCALED '+ var)] = \
-                season_inc/season_inc.sum(axis=0)
+            df.loc[df['SEASON'] == n, ('SCALED '+ var)] = \
+                season_inc/season_inc.sum(axis=0) # create new scaled variable in df
+## create scaled variables for flu incidence
 scale_inc(df, 'TOTAL POSITIVE')
 scale_inc(df_ili, 'ILITOTAL')
 
-# some exploratory/descriptive plotting and analysis
-pct_pos = df['PCT POSITIVE']
-plt.plot(range(len(df)), pct_pos, label='percent positive')
-pct_ili = df_ili['% WEIGHTED ILI']
-plt.plot(range(len(df_ili)), pct_ili, label='percent ILI visits')
-plt.legend(loc='best')
-plt.show()
-scaled_flu = df['SCALED TOTAL POSITIVE']
-plt.plot(range(len(df)), scaled_flu, label='positive tests scaled')
-scaled_ili = df_ili['SCALED ILITOTAL']
-plt.plot(range(len(df_ili)), scaled_ili, label='ILI visits scaled')
-plt.legend(loc='best')
-plt.show()
 def avg_dist(df, var):
     '''
-    gives average/aggregate distribution for force of infection based on
-    variable var
+    gives average/aggregate distribution for variable var across all seasons
     inputs:
         df: dataframe
-        var: variable in df representing flu incidence
+        var: variable in df
     '''
     mean_dist = []
     for week in range(52):
         mean_dist.append(np.mean(df.loc[df['WEEK IN SEASON'] == week, \
             var]))
     return mean_dist
-## average/aggregate graphs for % positive flu tests and % ili visits
-mean_pct_pos = avg_dist(df, 'PCT POSITIVE')
-plt.plot(range(52), mean_pct_pos)
-plt.show()
-mean_pct_ili = avg_dist(df_ili, '% WEIGHTED ILI')
-plt.plot(range(52), mean_pct_ili)
-plt.show()
-## average/aggregate graphs for scaled incidence variables
-mean_pct_pos = avg_dist(df, 'SCALED TOTAL POSITIVE')
-plt.plot(range(52), mean_pct_pos)
-plt.show()
-mean_pct_ili = avg_dist(df_ili, 'SCALED ILITOTAL')
-plt.plot(range(52), mean_pct_ili)
-plt.show()
+
 ## stats for peak of flu season and peak ili
 def get_stats(df, var, rv=False):
     '''
@@ -159,13 +138,13 @@ def get_stats(df, var, rv=False):
     peak_var = []
     peak_week = []
     for n in range(N_SEASONS):
-        var_max = max(df.loc[df['SEASON'] == n + 1, var])
+        var_max = max(df.loc[df['SEASON'] == n, var])
         if ~np.isnan(var_max):
             peak_var.append(var_max)
         week = df.loc[df[var] == var_max, 'WEEK IN SEASON']
         if len(week) > 1:
             peak_week.append(int(np.mean(week)))
-        elif len(week) != 1:
+        elif len(week) == 0:
             pass
         else:
             peak_week.append(int(week))
@@ -174,7 +153,7 @@ def get_stats(df, var, rv=False):
         np.mean(peak_var), np.std(peak_var)))
     if mean_peak_week > 52.143 - (SEASON_START_WEEK + 1):
         print("mean peak week is {}, with standard deviation {}".format( \
-            SEASON_START_WEEK + 1 + mean_peak_week - 52.143, np.std(peak_week)))
+            SEASON_START_WEEK + 1 + mean_peak_week - 52, np.std(peak_week)))
     else:
         print("mean peak week is {}, with standard deviation {}".format( \
             SEASON_START_WEEK + 1 + mean_peak_week, np.std(peak_week)))
@@ -182,33 +161,22 @@ def get_stats(df, var, rv=False):
         return peak_var, peak_week
     else:
         return None
-get_stats(df, 'PCT POSITIVE')
-get_stats(df, 'TOTAL POSITIVE')
-get_stats(df_ili, '% WEIGHTED ILI')
-get_stats(df_ili, 'ILITOTAL')
-## graph % positive by influenza season beginning week 29
-### season 1 starts in 1997; season 22 ends in 2019
-df_new = df.set_index('WEEK IN SEASON')
-df_new.groupby('SEASON')['PCT POSITIVE'].plot(legend=True)
-plt.show()
-### graph % ili visits by influenza season 
-df_ili_new = df_ili.set_index('WEEK IN SEASON')
-df_ili_new.groupby('SEASON')['% WEIGHTED ILI'].plot(legend=True)
-plt.show()
 
-def vac_eff(t, t_vac, waning_rate, max_ve=1):
+# functions for model
+def vac_eff(t, t_vac, waning_rate, t_max, max_ve=1):
     '''
-    gives simulated distribution for flu vaccine effectiveness after vaccination
+    gives simulated distribution for flu vaccine effectiveness (VE) after vaccination
     inputs:
         t (array of integers): represents weeks
-        t_vac (int): day of flu vaccination
+        t_vac (int): week of flu vaccination
         waning_rate (float): waning rate
-        max_ve (float): maximum vaccine effectiveness on a scale from 0 to 1
+        t_max (int): time until maximum VE is reached
+        max_ve (float): maximum VE on a scale from 0 to 1
     '''
     t = t.astype(float)
-    dist = np.piecewise(t, [t < 2, t >= 2], [lambda t: \
-        (np.exp((np.log(2) / 2) * t) - 1) * max_ve, lambda t: \
-        np.exp(-waning_rate * (t - 2)) * max_ve])
+    dist = np.piecewise(t, [t < t_max, t >= t_max], [lambda t: \
+        (np.exp((np.log(2) / t_max) * t) - 1) * max_ve, lambda t: \
+        np.exp(-waning_rate * (t - t_max)) * max_ve])
     unvac_weeks = np.array([0]*t_vac)
     dist = np.concatenate([unvac_weeks, dist])
     dist = dist[0:len(t)]
@@ -228,17 +196,16 @@ def vac_eff(t, t_vac, waning_rate, max_ve=1):
 
 def season_inc(df, season, var):
     '''
+    returns incidence distribution for a season    
     inputs:
         df: dataframe
+        season (int): flu season of interest
         var (str): variable in df representing flu incidence
-        season (int): flu season of interest (with indexing starting at 0)
-    returns incidence distribution
     '''
     inc_dist = []
-    season += 1 # account for difference in indexing
     weeks = (df['SEASON'] == season).sum() # weeks in season
     for week in range(weeks):
-        if season == 1:
+        if season == 0:
             week += 40 - SEASON_START_WEEK
         inc_dist.append(df.loc[(df['WEEK IN SEASON'] == week) & \
             (df['SEASON'] == season), var].item())
@@ -249,33 +216,37 @@ def red_dist_inc(inc, ve_distributions=None, waning_rate=None, max_ve=1):
     returns x and y to graph distribution for flu reduction
     inputs: 
         inc: flu incidence distribution
+        ve_distributions: 
         waning_rate (float): waning rate
+        max_ve (float): maximum VE on a scale from 0 to 1
     '''
     weeks_tot = np.arange(0, len(inc))
     pct_flu_red = []
     for week in weeks_tot:
         if not ve_distributions:
-            ve = vac_eff(weeks_tot, week, waning_rate, max_ve)
+            ve = vac_eff(weeks_tot, week, waning_rate, T_TO_MAX, max_ve)
         elif not waning_rate:
             ve = ve_distributions[week]
         pct_flu_red.append(sum(ve * inc))
+    red_max = max(pct_flu_red)
     return np.arange(0, len(inc)), pct_flu_red
 
 def red_dist_df(df, var, waning_rate, max_ve=1):
     '''
     returns groupby object to graph time series for flu reduction/protection
+    (excludes incomplete seasons)
     inputs:
         df: dataframe
         var (str): variable in df representing flu incidence
         waning_rate (float): waning rate
-    '''
+        max_ve (float): maximum VE on a scale from 0 to 1    '''
     for season in range(N_SEASONS):
         inc = season_inc(df, season, var)
         weeks_tot = np.arange(0, len(inc))
         for week in weeks_tot:
-            ve = vac_eff(weeks_tot, week, waning_rate, max_ve)
+            ve = vac_eff(weeks_tot, week, waning_rate, T_TO_MAX, max_ve)
             df.loc[(df['WEEK IN SEASON'] == week) & (df['SEASON'] \
-                == season + 1), 'FLU REDUCTION'] = sum(ve * inc)
+                == season), 'FLU REDUCTION'] = sum(ve * inc)
     new_df = df.set_index('WEEK IN SEASON')
     return new_df.groupby('SEASON')['FLU REDUCTION']
 
@@ -285,12 +256,14 @@ def get_ve_dists(waning_rate, inc_dist, max_ve=1):
     curves for vaccination at each week of the year
     inputs:
         waning_rate (float): waning rate
-        max_ve (float): maximum vaccine effectiveness on a scale from 0 to 1
+        inc_dist
+        max_ve (float): maximum VE on a scale from 0 to 1
     '''
     weeks_tot = np.arange(0, len(inc_dist))
     ve_distributions = []
     for week in weeks_tot:
-        ve_distributions.append(vac_eff(weeks_tot, week, waning_rate, max_ve))
+        ve_distributions.append(vac_eff(weeks_tot, week, waning_rate, T_TO_MAX, \
+            max_ve))
     return ve_distributions
 
 def get_inc_dists(df, var):
@@ -306,9 +279,16 @@ def get_inc_dists(df, var):
         inc_distributions.append(inc)
     return inc_distributions
 
+# functions for plotting
 def format_axes(ax, label_fontsize, tick_fontsize, ve=False):
     '''
-    formats axes for plotting
+    formats axes for plotting with time on the x axis; used for plotting VE,
+    incidence, and flu reduction/protection
+    inputs:
+        ax (matplotlib Axes object): axes to be formatted
+        label_fontsize (int): font size for labels
+        tick_fontsize (int): font size for tick labels
+        ve (bool): True if plotting VE, removes month tick labels
     '''
     ax.tick_params(axis="y", labelsize=tick_fontsize)
     ax.set_xticks(np.arange(4.345/2, 47.8 + 4.345/2, step=4.345)) # 4.345 weeks on average in a month
@@ -323,11 +303,15 @@ def format_axes(ax, label_fontsize, tick_fontsize, ve=False):
 def plot_ve(ax, ve_distribution, max_ve=1):
     '''
     plots vaccine effectiveness curve
+    inputs:
+        ax (matplotlib Axes object): axes to be formatted
+        ve_distribution (array of floats): VE distribution to be plotted
+        max_ve (float): maximum VE on a scale from 0 to 1
     '''
     format_axes(ax, 20, 16, ve=True)
     if max_ve == 1:
         ax.set_ylim(-0.05, 1.1)
-        ax.set_ylabel('Relative VE')
+        ax.set_ylabel('Relative \n VE')
     else:
         ax.set_ylim(-0.05, max_ve + 0.05)
         ax.set_ylabel('VE')
@@ -337,6 +321,12 @@ def plot_ve(ax, ve_distribution, max_ve=1):
 def plot_inc(ax, inc_distributions, avg_inc, var, color=False):
     '''
     plots disease distribution curves for each season and the mean curve
+    inputs:
+        ax (matplotlib Axes object): axes to be formatted
+        inc_distributions
+        avg_inc
+        var
+        color
     '''
     if 'SCALED' in var:
         ax.set_ylabel('Scaled \n Incidence')
@@ -344,38 +334,47 @@ def plot_inc(ax, inc_distributions, avg_inc, var, color=False):
         ax.set_ylabel('Incidence')
     ax.set_xlabel('Time')
     format_axes(ax, 20, 16)
-    ax.plot(np.arange(0, 52), avg_inc, color='black')
     if color:
         for dist in inc_distributions:
             ax.plot(np.arange(0, len(dist)), dist, linewidth=0.3)
     else:   
         for dist in inc_distributions:
             ax.plot(np.arange(0, len(dist)), dist, color='gray', linewidth=0.3)
+    ax.plot(np.arange(0, 52), avg_inc, color='black')
 
 def plot_red(ax, avg_inc, ve_distributions, grouped, color=False):
     '''
     plots flu reduction/protection curves for each season and the mean curve
+    inputs:
+        ax (matplotlib Axes object): axes to be formatted
+        avg_inc
+        ve_distributions
+        grouped
+        color
     '''
-    ax.set_ylabel('Protection')
+    ax.set_ylabel('Relative \n Protection')
     ax.set_xlabel('Time of Vaccination')
     format_axes(ax, 20, 16)
-    x, y = red_dist_inc(avg_inc, ve_distributions=ve_distributions)
-    ax.plot(x, y, color='black')
+    ax.set_yticks(np.arange(0, 0.8, step=0.25))
     if color:
         for g in grouped:
             ax.plot(g[1], linewidth=0.3)
     else:   
         for g in grouped:
             ax.plot(g[1], color='gray', linewidth=0.3)
+    x, y = red_dist_inc(avg_inc, ve_distributions=ve_distributions)
+    ax.plot(x, y, color='black')
 
 # three-panel plots
 def plot_all(df, var, waning_rate, max_ve=1, color=False):
     '''
-    plots vaccine effectiveness, force of infection, and flu reduction 
+    plots vaccine effectiveness, scaled incidence, and flu reduction 
     inputs:
         df: dataframe
         var (str): variable in df representing flu incidence
         waning_rate (float): waning rate
+        max_ve (float): maximum VE on a scale from 0 to 1
+        color
     '''
     fig = plt.figure()
     ax1 = fig.add_subplot(311)
@@ -399,9 +398,17 @@ plot_all(df_ili, 'SCALED ILITOTAL', WANING_RATE)
 # individual plots
 def plot_just(df, var, ve=False, inc=False, red=False):
     '''
+    plots vaccine effectiveness, scaled incidence, or flu reduction
+    inputs:
+        df
+        var
+        ve
+        inc
+        red
     '''
     fig, ax = plt.subplots() 
     avg_inc = avg_dist(df, var)
+    # if ve:
     if inc:
         inc_distributions = get_inc_dists(df, var)
         plot_inc(ax, inc_distributions, avg_inc, var, color=True)
@@ -415,10 +422,12 @@ plot_just(df, 'TOTAL POSITIVE', inc=True) # plotting positive flu cases in each 
 plot_just(df, 'SCALED TOTAL POSITIVE', inc=True)
 plot_just(df, 'SCALED TOTAL POSITIVE', red=True)
 
+mean_pct_pos = avg_dist(df, 'PCT POSITIVE')
 x_mean_flu, y_mean_flu = red_dist_inc(mean_pct_pos, waning_rate=WANING_RATE)
 plt.plot(x_mean_flu, y_mean_flu)
 plt.show()
 
+mean_pct_ili = avg_dist(df_ili, '% WEIGHTED ILI')
 x_mean_ili, y_mean_ili = red_dist_inc(mean_pct_ili, waning_rate=WANING_RATE)
 plt.plot(x_mean_ili, y_mean_ili)
 plt.show()
@@ -447,7 +456,7 @@ def plot_flu_red(df, var):
     else:
         ax.set_ylim(0, max(distributions[0]))
     ax.set_xlim(0, 52)
-    ax.set_ylabel('Protection')
+    ax.set_ylabel('Relative Protection')
     ax.set_xlabel('Time of Vaccination')
     format_axes(ax, 24, 18)
     ax.tick_params(axis="x", length=7,  which='major')
@@ -471,8 +480,24 @@ plot_flu_red(df_ili, 'SCALED ILITOTAL')
 get_stats(df, 'FLU REDUCTION')
 get_stats(df_ili, 'FLU REDUCTION')
 
-# plot relationship between waning rate and optimal time to vaccinate
-def opttime_plot(df, var, label, fmt=None):
+def get_rec_week(df, var):
+    '''
+    returns optimal week for flu vaccination
+    inputs:
+        df
+        var
+    '''
+    avg_inc = avg_dist(df, var)
+    flu_red_dist = red_dist_inc(avg_inc, waning_rate=WANING_RATE)[1]
+    red_max = max(flu_red_dist)
+    peak_week = flu_red_dist.index(red_max)
+    return peak_week
+# week of the season for optimal protection from vaccination assuming 2.5% weekly waning
+OPT_T_VAC = get_rec_week(df, 'SCALED TOTAL POSITIVE') # returns week in terms of 'WEEK IN SEASON'
+# week of the year for optimal protection from vaccination
+REC_WEEK = OPT_T_VAC + SEASON_START_WEEK + 1 # add 1 to account for difference in indexing
+
+def opttime_plot(df, var, label=None, fmt=None):
     '''
     plots vaccination week of max protection for range of waning rates
     inputs:
@@ -487,13 +512,18 @@ def opttime_plot(df, var, label, fmt=None):
     for wr in waning_rates:
         flu_red_dist = red_dist_inc(avg_inc, waning_rate=wr)[1]
         week_max_red.append(flu_red_dist.index(max(flu_red_dist)))
-    if fmt:
-        plt.plot(waning_rates, week_max_red, fmt, label=label)
+    if not label:
+        plt.plot(waning_rates, week_max_red, color='black')
     else:
-        plt.plot(waning_rates, week_max_red, color='black', label=label)
+        if fmt:
+            plt.plot(waning_rates, week_max_red, fmt, label=label)
+        else:
+            plt.plot(waning_rates, week_max_red, color='black', label=label)
     plt.ylim([-1, 21.75])
     plt.xlim([-0.0025, 0.1025])
     ax = plt.axes()
+    ax.yaxis.grid(color='#d3d3d3')
+    ax.xaxis.grid(color='#d3d3d3')
     ax.set_yticks(np.arange(4.345/2, 21.75 + 4.345/2, step=4.345))
     ax.set_yticks(np.arange(0, 21.75, step=4.345), minor=True)
     ax.set_yticklabels([])
@@ -506,24 +536,140 @@ def opttime_plot(df, var, label, fmt=None):
     plt.xlabel('Weekly Waning Rate')
     ax.yaxis.label.set_fontsize(24)
     ax.xaxis.label.set_fontsize(24)
-    plt.legend(loc='best', fontsize=14, borderpad=0.5, borderaxespad=1)
+    if label:
+        plt.legend(loc='best', fontsize=14, borderpad=0.5, borderaxespad=1)
     plt.tight_layout()
-opttime_plot(df, 'SCALED TOTAL POSITIVE', label='scaled positive flu tests used \n to measure flu incidence')
-opttime_plot(df_ili, 'SCALED ILITOTAL', label='scaled ILI visits used to \n measure flu incidence', fmt='--k')
+opttime_plot(df, 'SCALED TOTAL POSITIVE')
 plt.show()
 
-iliweeks = get_stats(df_ili, 'SCALED ILITOTAL', rv=True)[1]
-fluweeks = get_stats(df, 'SCALED TOTAL POSITIVE', rv=True)[1]
-plt.scatter(iliweeks, fluweeks, label='week of peak flu activity')
-optili = get_stats(df_ili, 'FLU REDUCTION', rv=True)[1] # 15-27
-optflu = get_stats(df, 'FLU REDUCTION', rv=True)[1] # 10-16
-plt.scatter(optili, optflu, label='optimal vaccination week')
-plt.ylim([0, 52])
-plt.xlim([0, 52])
-plt.ylabel('Confirmed Flu')
-plt.xlabel('ILI')
-plt.legend(loc='best')
+def relative_benefit(df, var, t_disp):
+    '''
+    quantifies benefit of vaccinating at optimal time vs. early or late
+    inputs:
+        t_disp (int): time displacement from optimal, in weeks
+    '''
+    peak = []
+    early = []
+    late = []
+    # if we could make predictions based on seasonal incidence
+    # for n in range(N_SEASONS):
+    #     red_max = max(df.loc[df['SEASON'] == n + 1, 'FLU REDUCTION'])
+    #     peak.append(red_max)
+    #     if red_max:
+    #         red_early = df.loc[(df['WEEK IN SEASON'] == peak_week - t_disp) \
+    #             & (df['SEASON'] == n + 1), 'FLU REDUCTION'].item()
+    #         early.append(red_early)
+    #         red_late = df.loc[(df['WEEK IN SEASON'] == peak_week + t_disp) \
+    #             & (df['SEASON'] == n + 1), 'FLU REDUCTION'].item()
+    #         late.append(red_late)
+    # for the average season
+    waning_rates = np.linspace(0, 0.1)
+    avg_inc = avg_dist(df, var)
+    for wr in waning_rates:
+        flu_red_dist = red_dist_inc(avg_inc, waning_rate=wr)[1]
+        red_max = max(flu_red_dist)
+        peak_week = flu_red_dist.index(red_max)
+        # if len(peak_week) > 1:
+        #     red_early = flu_red_dist[min(peak_week) - 2]
+        #     red_late = flu_red_dist[max(peak_week) + 2]
+        # else:
+        #     red_early = flu_red_dist[peak_week - 2]
+        #     red_late = flu_red_dist[peak_week + 2]
+        peak.append(red_max)
+        early.append(red_early)
+        late.append(red_late)
+    return np.array(late) - np.array(early)
+
+def plot_benefit(df, var):
+    '''
+    '''
+    relative_prots = relative_benefit(df, var, 2)
+    waning_rates = np.linspace(0, 0.1)
+    # for wr in waning_rates:
+    #     red_dist_df(df, var, wr)
+    #     relative_prot = np.mean(relative_benefit(df, 2))
+    #     relative_prots.append(relative_prot)
+    plt.plot(waning_rates, relative_prots)
+    plt.show()
+
+relative_prot = relative_benefit(2) 
+plt.plot(np.arange(0, len(relative_prot)), relative_prot)
+plt.plot(np.arange(0, len(relative_prot)), np.repeat(np.mean(relative_prot), len(relative_prot)))
 plt.show()
+
+def prot_difference(df, var, t_vac):
+    '''
+    '''
+    added_prot = [] 
+    opttime = get_rec_week(df, var)
+    for n in range(N_SEASONS):
+        red_opttime = df.loc[(df['SEASON'] == n) & (df['WEEK IN SEASON'] \
+            == opttime), 'FLU REDUCTION'].item()
+        if ~np.isnan(red_opttime):
+            red_cur = df.loc[(df['SEASON'] == n) & (df['WEEK IN SEASON'] \
+                == t_vac), 'FLU REDUCTION'].item()
+            added_prot.append(red_opttime - red_cur)
+    print(added_prot)
+    return added_prot
+prot_diff = prot_difference(df, 'SCALED TOTAL POSITIVE', 14) # week 14 of the season = week 43 of the year = end of oct
+plt.plot(np.arange(0, len(prot_diff)), prot_diff)
+plt.plot(np.arange(0, len(prot_diff)), np.repeat(np.mean(prot_diff), len(prot_diff)))
+plt.ylabel('Added Protection From Vaccinating \n End of November Instead of End of October')
+plt.xlabel('Season')
+plt.show()
+
+# def prot_difference(df, opt_t_vac, t_vac):
+#     '''
+#     '''
+#     added_prot = [] 
+#     for n in range(N_SEASONS):
+#         red_opttime = df.loc[(df['SEASON'] == n + 1) & (df['WEEK IN SEASON'] \
+#             == np.floor(opt_t_vac)), 'FLU REDUCTION'].item()
+#         print('reduction at optimal vac time is ', red_opttime)
+#         if (~np.isnan(red_opttime)):
+#             red_cur = df.loc[(df['SEASON'] == n + 1) & (df['WEEK IN SEASON'] \
+#                 == t_vac), 'FLU REDUCTION'].item()
+#             added_prot.append(red_opttime - red_cur)
+#     return added_prot
+# added_prot = prot_difference(df, OPT_T_VAC, 14) # week 14 of the season = week 43 of the year = end of oct
+# plt.plot(np.arange(0, len(added_prot)), added_prot)
+# plt.plot(np.arange(0, len(added_prot)), np.repeat(np.mean(added_prot), len(added_prot)))
+# plt.show()
+
+def prot_avg_difference(df, var, t_vac):
+    '''
+    plot waning rate vs. added benefit of vaccinating at optimal time as opposed
+    to end of october
+    '''
+    prot_diff = []
+    waning_rates = np.linspace(0, 0.1, 10)
+    avg_inc = avg_dist(df, var)
+    for wr in waning_rates:
+        flu_red_dist = red_dist_inc(avg_inc, waning_rate=wr)[1]
+        red_opttime = max(flu_red_dist)
+        red_cur = flu_red_dist[t_vac]
+        prot_diff.append(red_opttime - red_cur)
+    plt.plot(waning_rates, prot_diff)
+    plt.ylabel('Benefit of Vaccinating at Optimal Time \n Rather Than End of October')
+    plt.xlabel('Weekly Waning Rate')
+    plt.show()
+prot_avg_difference(df, 'SCALED TOTAL POSITIVE', 14)
+
+def compare_ili_flu(df_ili, df):
+    '''
+    '''
+    iliweeks = get_stats(df_ili, 'SCALED ILITOTAL', rv=True)[1]
+    fluweeks = get_stats(df, 'SCALED TOTAL POSITIVE', rv=True)[1]
+    plt.scatter(iliweeks, fluweeks, label='week of peak flu activity')
+    optili = get_stats(df_ili, 'FLU REDUCTION', rv=True)[1] # 15-27
+    optflu = get_stats(df, 'FLU REDUCTION', rv=True)[1] # 10-16
+    plt.scatter(optili, optflu, label='optimal vaccination week')
+    plt.ylim([0, 52])
+    plt.xlim([0, 52])
+    plt.ylabel('Confirmed Flu')
+    plt.xlabel('ILI')
+    plt.legend(loc='best')
+    plt.show()
 
 # import lin_reg
 # from sklearn.metrics import r2_score
