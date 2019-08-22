@@ -2,7 +2,9 @@
 # SUMMER 2019
 # OLIVIA SHAO
 
-# 0 Import modules, define global parameters, and import data
+#
+# 0 Setup
+#
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -18,15 +20,17 @@ SEASON_START_WEEK = 28 # mid-july, with week indices beginning at 0 \
 T_TO_MAX = 2 # weeks it takes to reach max VE, after which waning begins
 
 # 1997-2015 flu surveillance data
-df9715 = pd.read_csv('WHO_NREVSS_Combined_prior_to_2015_16.csv', header=1)
+df9715 = pd.read_csv('data/WHO_NREVSS_Combined_prior_to_2015_16.csv', header=1)
 # 2015-2019 flu surveillance data (clinical labs)
-df1519c = pd.read_csv('WHO_NREVSS_Clinical_Labs.csv', header=1)
+df1519c = pd.read_csv('data/WHO_NREVSS_Clinical_Labs.csv', header=1)
 # 2015-2019 flu surveillance data (public health labs)
-df1519ph = pd.read_csv('WHO_NREVSS_Public_Health_Labs.csv', header=1)
+df1519ph = pd.read_csv('data/WHO_NREVSS_Public_Health_Labs.csv', header=1)
 # 1997-2015 influenza like illness data
-df_ili = pd.read_csv('ILINet.csv', header=1)
+df_ili = pd.read_csv('data/ILINet.csv', header=1)
 
-# 1 Clean data
+#
+# 1 Cleaning data
+#
 df9715['TOTAL POSITIVE'] = df9715.iloc[:, -7:].sum(axis=1)
 df9715 = df9715.drop(['REGION TYPE', 'REGION', 'A (2009 H1N1)', 'A (H1)', \
     'A (H3)', 'A (Subtyping not Performed)', 'A (Unable to Subtype)', \
@@ -112,18 +116,6 @@ def scale_inc(df, var):
 scale_inc(df, 'TOTAL POSITIVE')
 scale_inc(df_ili, 'ILITOTAL')
 
-def avg_dist(df, var):
-    '''
-    gives average/aggregate distribution for variable var across all seasons
-    inputs:
-        df: dataframe
-        var (str): variable in df
-    '''
-    mean_dist = []
-    for week in range(52):
-        mean_dist.append(np.mean(df.loc[df['WEEK IN SEASON'] == week, var]))
-    return mean_dist
-
 ## stats for peak of flu season and peak ili
 def get_stats(df, var, rv=False):
     '''
@@ -161,7 +153,9 @@ def get_stats(df, var, rv=False):
     else:
         return None
 
-# 2 Define functions for model
+#
+# 2 Functions for model
+#
 def vac_eff(t, t_vac, waning_rate, t_max, max_ve=1):
     '''
     gives simulated distribution for flu vaccine effectiveness (VE) 
@@ -282,7 +276,21 @@ def get_inc_dists(df, var):
         inc_distributions.append(inc)
     return inc_distributions
 
-# 3 Define functions for plotting
+def avg_dist(df, var):
+    '''
+    gives average/aggregate distribution for variable var across all seasons
+    inputs:
+        df: dataframe
+        var (str): variable in df
+    '''
+    mean_dist = []
+    for week in range(52):
+        mean_dist.append(np.mean(df.loc[df['WEEK IN SEASON'] == week, var]))
+    return mean_dist
+
+#
+# 3 Functions for plotting
+#
 def format_axes(ax, label_fontsize, tick_fontsize, ve=False):
     '''
     formats axes for plots with time on the x axis; used for plotting VE,
@@ -293,7 +301,7 @@ def format_axes(ax, label_fontsize, tick_fontsize, ve=False):
         tick_fontsize (int): font size for tick labels
         ve (bool): True if plotting VE, removes month tick labels
     '''
-    ax.tick_params(axis="y", labelsize=tick_fontsize)
+    ax.tick_params(axis='y', labelsize=tick_fontsize)
     ax.set_xticks(np.arange(4.345 / 2, 47.8 + 4.345 / 2, step=4.345)) # 4.345 weeks on average in a month
     ax.set_xticks(np.arange(0, 53, step=4.345), minor=True)
     ax.set_xticklabels([])
@@ -426,9 +434,9 @@ def plot_just(df, var, ve=False, inc=False, red=False):
     plt.tight_layout()
     plt.show()
 plot_just(df, 'TOTAL POSITIVE', inc=True) # plotting positive flu cases in each season
-plot_just(df, 'SCALED TOTAL POSITIVE', ve=True)
-plot_just(df, 'SCALED TOTAL POSITIVE', inc=True)
-plot_just(df, 'SCALED TOTAL POSITIVE', red=True)
+# plot_just(df, 'SCALED TOTAL POSITIVE', ve=True)
+# plot_just(df, 'SCALED TOTAL POSITIVE', inc=True)
+# plot_just(df, 'SCALED TOTAL POSITIVE', red=True)
 
 def plot_flu_red(df, var):
     '''
@@ -488,6 +496,9 @@ def get_rec_week(df, var):
 OPT_T_VAC = get_rec_week(df, 'SCALED TOTAL POSITIVE') # returns week in terms of 'WEEK IN SEASON'
 # week of the year for optimal protection from vaccination
 REC_WEEK = OPT_T_VAC + SEASON_START_WEEK + 1 # add 1 to account for difference in indexing
+# week of the season with highest flu activity on average
+avg_inc = avg_dist(df, 'SCALED TOTAL POSITIVE')
+PEAK_FLU_WEEK = avg_inc.index(max(avg_inc)) + SEASON_START_WEEK + 1 - 52
 
 def opttime_plot(df, var, label=None, fmt=None):
     '''
@@ -522,8 +533,8 @@ def opttime_plot(df, var, label=None, fmt=None):
     labels = calendar.month_abbr[7:13]
     ax.set_yticklabels(labels, rotation=90, fontsize=20, minor=True, va='center')
     ax.set_xticks(np.arange(0, 0.11, step=0.01))
-    ax.tick_params(axis="y", length=7,  which='major')
-    ax.tick_params(axis="x", labelsize=20)
+    ax.tick_params(axis='y', length=7,  which='major')
+    ax.tick_params(axis='x', labelsize=20)
     plt.ylabel('Optimal Week to Vaccinate', fontsize=24)
     plt.xlabel('Weekly Waning Rate', fontsize=24)
     if label:
@@ -622,7 +633,7 @@ plt.ylabel('Added Protection From Vaccinating \n End of November Instead of End 
 plt.xlabel('Season')
 plt.show()
 
-def prot_diff_wr_dep(df, var, t_vac, ax=None):
+def prot_diff_wr_dep(df, var, t_vac):
     '''
     plots waning rate vs. added benefit of vaccinating at optimal time as opposed
     to end of october
@@ -631,25 +642,26 @@ def prot_diff_wr_dep(df, var, t_vac, ax=None):
         var (str): variable in df representing flu incidence
         t_vac
     '''
-    prot_diff = []
-    waning_rates = np.linspace(0, 0.1, 10)
+    prot_ratio = []
+    waning_rates = np.linspace(0, 0.1)
     avg_inc = avg_dist(df, var)
     for wr in waning_rates:
         flu_red_dist = red_dist_inc(avg_inc, waning_rate=wr)[1]
         red_opttime = max(flu_red_dist)
         red_cur = flu_red_dist[t_vac]
-        prot_diff.append(red_opttime - red_cur)
-    plt.plot(waning_rates, prot_diff, color='black')
+        prot_ratio.append(red_opttime / red_cur)
+    plt.plot(waning_rates, prot_ratio, color='black')
     # ax.set_title('Vaccinating at Waning-Dependent \n Optimal Time vs. Week 43')
-    plt.ylabel('Relative Protective Benefit', fontsize=24)
+    plt.ylabel('Relative Protection', fontsize=24)
     plt.xlabel('Weekly Waning Rate', fontsize=24)
     ax = plt.axes()
-    ax.tick_params(axis="y", labelsize=20)
-    ax.tick_params(axis="x", labelsize=20)
+    ax.tick_params(axis='y', labelsize=20)
+    ax.tick_params(axis='x', labelsize=20)
+    ax.margins(x=0, y=0)
+    plt.show()
 prot_diff_wr_dep(df, 'SCALED TOTAL POSITIVE', 14) # week 14 of the season = week 43 of the year = end of oct
-plt.show()
 
-def prot_diff(df, var, opt_t_vac, t_vac, ax=None):
+def added_prot(df, var, opt_t_vac, t_vac):
     '''
     plots waning rate vs. added benefit of vaccinating at optimal time as opposed
     to end of october
@@ -658,23 +670,26 @@ def prot_diff(df, var, opt_t_vac, t_vac, ax=None):
         var (str): variable in df representing flu incidence
         t_vac
     '''
-    prot_diff = []
-    waning_rates = np.linspace(0, 0.1, 10)
+    added_prot = []
+    waning_rates = np.linspace(0, 0.1)
     avg_inc = avg_dist(df, var)
     for wr in waning_rates:
         flu_red_dist = red_dist_inc(avg_inc, waning_rate=wr)[1]
         red_opttime = flu_red_dist[OPT_T_VAC]
         red_cur = flu_red_dist[t_vac]
-        prot_diff.append(red_opttime - red_cur)
-    plt.plot(waning_rates, prot_diff, color='black')
+        added_prot.append(red_opttime / red_cur)
+    plt.plot(waning_rates, added_prot, color='black')
     # ax.set_title('Vaccinating at Week 48 vs. Week 43')
-    plt.ylabel('Relative Protective Benefit', fontsize=24)
+    plt.ylabel('Relative Protection', fontsize=24)
     plt.xlabel('Weekly Waning Rate', fontsize=24)
     ax = plt.axes()
-    ax.tick_params(axis="y", labelsize=20)
-    ax.tick_params(axis="x", labelsize=20)
-prot_diff(df, 'SCALED TOTAL POSITIVE', OPT_T_VAC, 14) # week 14 of the season = week 43 of the year = end of oct
-plt.show()
+    ax.tick_params(axis='y', labelsize=20)
+    ax.tick_params(axis='x', labelsize=20)
+    plt.vlines(0.025, min(added_prot), 1.06, linestyle='dashed', linewidth=0.5)
+    ax.axhline(y=1, color='black', linewidth=0.5)
+    ax.margins(x=0, y=0)
+    plt.show()
+added_prot(df, 'SCALED TOTAL POSITIVE', OPT_T_VAC, 14) # week 14 of the season = week 43 of the year = end of oct
 
 def compare_ili_flu(df_ili, df):
     '''
