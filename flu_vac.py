@@ -318,7 +318,6 @@ REC_WEEK = OPT_T_VAC + SEASON_START_WEEK + 1 # add 1 to account for difference i
 # week of the season with highest flu activity on average
 avg_inc = avg_dist(df, 'SCALED TOTAL POSITIVE')
 PEAK_FLU_WEEK = avg_inc.index(max(avg_inc)) + SEASON_START_WEEK + 1 - 52
-get_iqr(df, 'FLU REDUCTION')
 
 #
 # 3 Functions for figures
